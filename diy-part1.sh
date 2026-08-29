@@ -10,11 +10,13 @@
 # See /LICENSE for more information.
 #
 
-# Uncomment a feed source
-#sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
+# ========== 添加 MTK 闭源驱动 ==========
+# 从 hanwckf 仓库提取 MTK 驱动相关包
+git clone --depth=1 -b openwrt-21.02 https://github.com/hanwckf/immortalwrt-mt798x package/hanwckf-mt798x
 
-# Add a feed source
-#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
-# 添加 daed 源码
+# 只保留必要的驱动目录（如果克隆了整个仓库，需要复制驱动到正确位置）
+# 或者使用更精确的驱动源：
+# git clone https://github.com/hanwckf/mt798x-wifi-pkg package/mtk-wifi
+
+# ========== 添加 daed 源码 ==========
 git clone https://github.com/kenzok8/openwrt-daede.git package/openwrt-daede
