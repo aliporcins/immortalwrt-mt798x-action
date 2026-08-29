@@ -10,11 +10,16 @@
 # See /LICENSE for more information.
 #
 
-# Modify default IP
-#sed -i 's/192.168.1.1/192.168.50.5/g' package/base-files/files/bin/config_generate
+# ========== 修复 OpenClash 的 GEOIP 数据下载源 ==========
+# 在 feeds 更新后，OpenClash 的脚本文件已经存在
 
-# Modify default theme
-#sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+OPENCLASH_GEOIP_SCRIPT="feeds/luci/applications/luci-app-openclash/root/usr/share/openclash/geoip_dat_update.sh"
 
-# Modify hostname
-#sed -i 's/OpenWrt/P3TERX-Router/g' package/base-files/files/bin/config_generate
+if [ -f "$OPENCLASH_GEOIP_SCRIPT" ]; then
+    # 使用 ghfast.top 作为代理（比 ghproxy.net 更稳定）
+    sed -i 's|raw.githubusercontent.com|ghfast.top/raw.githubusercontent.com|g' "$OPENCLASH_GEOIP_SCRIPT"
+    sed -i 's|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat|https://ghfast.top/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat|g' "$OPENCLASH_GEOIP_SCRIPT"
+    echo "OpenClash GEOIP source fixed."
+else
+    echo "Warning: OpenClash GEOIP script not found, skipping."
+fi
