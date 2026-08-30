@@ -30,3 +30,5 @@ echo "CONFIG_PACKAGE_v2ray-geoip=n" >> .config
 echo "CONFIG_PACKAGE_v2ray-geosite=n" >> .config
 
 echo "DIY part 2 completed."
+# 修复 bpf-headers 中的 clang 路径
+find . -name "Makefile" -path "*/bpf-headers/*" -exec sed -i 's|/invalid/clang|/usr/bin/clang|g' {} \;
