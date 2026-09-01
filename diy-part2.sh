@@ -23,7 +23,7 @@ sed -i '/v2ray-geodata/d' .config 2>/dev/null || true
 echo "CONFIG_PACKAGE_v2ray-geoip=n" >> .config
 echo "CONFIG_PACKAGE_v2ray-geosite=n" >> .config
 
-# ========== 禁用 bpf-headers（如果软链接不生效） ==========
+# ========== 禁用 bpf-headers ==========
 echo "CONFIG_PACKAGE_kmod-bpf-headers=n" >> .config
 echo "CONFIG_PACKAGE_kmod-bpf-test=n" >> .config
 
