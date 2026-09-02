@@ -10,23 +10,19 @@
 # See /LICENSE for more information.
 #
 
-# ========== 1. 修复编译环境（安装编译所需工具） ==========
-# 安装 pahole（BTF 支持）和 clang 工具链
-sudo apt-get update
-sudo apt-get install -y pahole dwarves clang lld llvm
+# ========== 1. 确保工作在 openwrt 目录下 ==========
+if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
+    cd $GITHUB_WORKSPACE/openwrt
+fi
 
-# ========== 2. 添加 MTK 闭源驱动 (MT7981) ==========
-# 方法：将驱动作为自定义 feed 添加，而非直接 git clone 到 package/
+# ========== 2. 添加 MTK 闭源驱动 (MT7981) 到 feeds ==========
+# 使用 padavanonly 的驱动仓库
 echo "src-git mtk_driver https://github.com/padavanonly/immortalwrt-mt7981" >> feeds.conf.default
 
-# ========== 3. 添加 daed 源码 ==========
-# 使用正确的仓库地址（如果 kenzok8 的仓库可用）
+# ========== 3. 添加 daed 源码到 feeds ==========
+# 使用 kenzok8 的仓库（如果不可用，请自行替换为有效源）
 echo "src-git daed https://github.com/kenzok8/openwrt-daede.git" >> feeds.conf.default
-# 备用方案：如果上述仓库失效，可以使用：
+# 备用源（若上面失效，可取消下面一行的注释并注释掉上面那行）：
 # echo "src-git daed https://github.com/sbwml/openwrt-dae.git" >> feeds.conf.default
-
-# ========== 4. 更新 feeds 并安装包 ==========
-./scripts/feeds update -a
-./scripts/feeds install -a
 
 echo "DIY part 1 completed."
