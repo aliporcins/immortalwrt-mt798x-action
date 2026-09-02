@@ -1,33 +1,27 @@
 #!/bin/bash
 #
-# File name: diy-part2.sh
-# Description: OpenWrt DIY script part 2 (After Update feeds)
+# diy-part2.sh
+# Description: OpenWrt DIY script part 2 (After feeds install)
 #
 
-# ========== 创建 clang 软链接（修复硬编码路径） ==========
-sudo mkdir -p /invalid
-sudo ln -sf $(which clang-15) /invalid/clang 2>/dev/null || sudo ln -sf /usr/bin/clang-15 /invalid/clang
-sudo ln -sf $(which clang++-15) /invalid/clang++ 2>/dev/null || sudo ln -sf /usr/bin/clang++-15 /invalid/clang++
-echo "Clang symlink created: $(ls -la /invalid/clang)"
-
-# ========== 修复 OpenClash 的 GEOIP 数据下载源 ==========
-OPENCLASH_GEOIP_SCRIPT="feeds/luci/applications/luci-app-openclash/root/usr/share/openclash/geoip_dat_update.sh"
-if [ -f "$OPENCLASH_GEOIP_SCRIPT" ]; then
-    sed -i 's|raw.githubusercontent.com|ghfast.top/raw.githubusercontent.com|g' "$OPENCLASH_GEOIP_SCRIPT"
-    sed -i 's|https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat|https://ghfast.top/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat|g' "$OPENCLASH_GEOIP_SCRIPT"
-    echo "OpenClash GEOIP source fixed."
+# ========== 1. 确保工作在 openwrt 目录下 ==========
+if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
+    cd $GITHUB_WORKSPACE/openwrt
 fi
 
-# ========== 禁用 v2ray-geodata 编译 ==========
-sed -i '/v2ray-geodata/d' .config 2>/dev/null || true
-echo "CONFIG_PACKAGE_v2ray-geoip=n" >> .config
-echo "CONFIG_PACKAGE_v2ray-geosite=n" >> .config
+# ========== 2. 创建 clang 软链接（如果工作流中未设置） ==========
+# 若工作流中已通过 update-alternatives 设置，此步骤可省略，但保留以防万一
+if ! command -v clang >/dev/null 2>&1; then
+    sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
+    sudo ln -sf /usr/bin/clang++-15 /usr/bin/clang++
+fi
 
-# ========== 禁用 bpf-headers ==========
-echo "CONFIG_PACKAGE_kmod-bpf-headers=n" >> .config
-echo "CONFIG_PACKAGE_kmod-bpf-test=n" >> .config
+# ========== 3. 修复 OpenClash GEOIP 源 ==========
+# 将 cdn.jsdelivr.net 替换为 raw.githubusercontent.com，避免下载失败
+if [ -d package/luci-app-openclash ]; then
+    find package/luci-app-openclash -type f -name "*.lua" -exec sed -i 's|https://cdn.jsdelivr.net/gh|https://raw.githubusercontent.com|g' {} \;
+fi
 
-# ========== 直接修改 Makefile 中的 clang 路径 ==========
-find . -name "Makefile" -path "*/bpf-headers/*" -exec sed -i 's|/invalid/clang|/usr/bin/clang|g' {} \; 2>/dev/null || true
-
+# ========== 4. 禁用 v2ray-geodata 和 bpf-headers（在 .config 中已设置） ==========
+# 无需额外操作，这里仅作提醒
 echo "DIY part 2 completed."
