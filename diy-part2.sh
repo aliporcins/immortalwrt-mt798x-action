@@ -9,7 +9,7 @@ if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
     cd $GITHUB_WORKSPACE/openwrt
 fi
 
-# ========== 2. 创建 clang 软链接 ==========
+# ========== 2. 创建 clang 软链接（如果工作流中未设置） ==========
 if ! command -v clang >/dev/null 2>&1; then
     sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
     sudo ln -sf /usr/bin/clang++-15 /usr/bin/clang++
