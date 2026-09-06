@@ -68,9 +68,9 @@ jobs:
           squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim \
           wget xmlto xxd zlib1g-dev
         
-        # 设置 clang 为默认
-        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-15 100
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100
+        # 强制创建 clang 软链接（确保 PATH 中可用）
+        sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
+        sudo ln -sf /usr/bin/clang++-15 /usr/bin/clang++
         
         # 清理缓存
         sudo -E apt-get autoremove -y -qq --purge
@@ -121,12 +121,8 @@ jobs:
         echo "=== feeds.conf.default content ==="
         cat feeds.conf.default
         
-        # ==========================================
         # 逐个更新 feed，失败时重试
-        # ==========================================
         echo "=== Updating feeds individually with retry ==="
-        
-        # 获取所有 feed 名称
         FEEDS=$(grep -E '^src-git|^src-svn' feeds.conf.default | awk '{print $2}')
         
         for feed in $FEEDS; do
@@ -142,7 +138,7 @@ jobs:
               sleep 10
             else
               echo "  ❌ Feed $feed failed after 3 attempts."
-              # 检查是否是 mtk_driver，尝试用备用源
+              # 如果是 mtk_driver，尝试备用源
               if [ "$feed" = "mtk_driver" ]; then
                 echo "  🔄 Trying alternative source for mtk_driver..."
                 sed -i 's|padavanonly/immortalwrt-mt7981|hanwckf/immortalwrt-mt798x|g' feeds.conf.default
@@ -190,6 +186,20 @@ jobs:
       run: |
         cd openwrt
         
+        # ===== 修复 clang 环境变量（bpf-headers 需要） =====
+        export CLANG=/usr/bin/clang-15
+        export LLC=/usr/bin/llc-15
+        export LLVM_CONFIG=/usr/bin/llvm-config-15
+        export PATH=/usr/bin:$PATH
+        
+        echo "=== CLANG environment ==="
+        which clang
+        clang --version
+        echo "CLANG=$CLANG"
+        echo "LLVM_CONFIG=$LLVM_CONFIG"
+        # ===================================================
+        
+        # 初始化 staging_dir
         echo "Initializing staging_dir for dae/OpenClash..."
         make tools/compile -j1 || echo "tools compile completed (with warnings)"
         make toolchain/compile -j1 || echo "toolchain compile completed (with warnings)"
