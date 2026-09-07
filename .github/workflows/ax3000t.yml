@@ -186,20 +186,13 @@ jobs:
       run: |
         cd openwrt
         
-        # ===== 修复 clang 环境变量（bpf-headers 需要） =====
-        export CLANG=/usr/bin/clang-15
-        export LLC=/usr/bin/llc-15
-        export LLVM_CONFIG=/usr/bin/llvm-config-15
+        # ===== 确保 clang 在 PATH 中 =====
         export PATH=/usr/bin:$PATH
-        
         echo "=== CLANG environment ==="
         which clang
         clang --version
-        echo "CLANG=$CLANG"
-        echo "LLVM_CONFIG=$LLVM_CONFIG"
-        # ===================================================
         
-        # 初始化 staging_dir
+        # ===== 初始化 staging_dir =====
         echo "Initializing staging_dir for dae/OpenClash..."
         make tools/compile -j1 || echo "tools compile completed (with warnings)"
         make toolchain/compile -j1 || echo "toolchain compile completed (with warnings)"
@@ -211,8 +204,21 @@ jobs:
           echo "⚠️ WARNING: staging_dir not found, continuing anyway..."
         fi
         
+        # ===== 关键修复：将 clang 变量作为 make 参数传递 =====
         echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        make -j$(nproc) \
+            CLANG=/usr/bin/clang-15 \
+            LLC=/usr/bin/llc-15 \
+            LLVM_CONFIG=/usr/bin/llvm-config-15 || \
+        make -j1 \
+            CLANG=/usr/bin/clang-15 \
+            LLC=/usr/bin/llc-15 \
+            LLVM_CONFIG=/usr/bin/llvm-config-15 || \
+        make -j1 V=s \
+            CLANG=/usr/bin/clang-15 \
+            LLC=/usr/bin/llc-15 \
+            LLVM_CONFIG=/usr/bin/llvm-config-15
+        
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
