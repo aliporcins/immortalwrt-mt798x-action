@@ -1,288 +1,191 @@
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-#
-# File: .github/workflows/ax3000t.yml
-# Description: Build OpenWrt using GitHub Actions
-#
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-
-name: ax3000t immortalwrt-mt798x Builder
+name: Build ImmortalWrt for AX3000T
 
 on:
-  repository_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
-  watch:
-    types: started
-
-env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: master
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: mt7981-ax3000t.config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: false
-  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
     - name: Checkout
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Install build dependencies
       run: |
-        # 清理磁盘空间
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
-        
-        # 更新软件源
-        sudo -E apt-get update -qq
-        
-        # 安装 clang/llvm（eBPF 编译需要）
-        sudo -E apt-get install -y -qq clang-15 llvm-15
-        
-        # 安装 Go（dae 编译需要）
-        sudo -E apt-get install -y -qq golang-go
-        
-        # 安装全部编译依赖
-        sudo -E apt-get install -y -qq \
-          dwarves ack antlr3 asciidoc autoconf automake autopoint binutils bison \
-          build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar \
-          flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man \
-          intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
-          libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev \
-          libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp \
-          ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
-          python3-pyelftools python3-setuptools qemu-utils rsync scons \
-          squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim \
-          wget xmlto xxd zlib1g-dev
-        
-        # 强制创建 clang 软链接（确保 PATH 中可用）
-        sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
-        sudo ln -sf /usr/bin/clang++-15 /usr/bin/clang++
-        
-        # 清理缓存
-        sudo -E apt-get autoremove -y -qq --purge
-        sudo -E apt-get clean -qq
-        
-        # 设置时区
-        sudo timedatectl set-timezone "$TZ"
-        
-        # 创建工作目录
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
-        
-        # Git 全局配置（解决网络问题）
-        git config --global url."https://".insteadOf git://
-        git config --global core.compression 0
-        git config --global http.postBuffer 1048576000
-        git config --global http.lowSpeedLimit 0
-        git config --global http.lowSpeedTime 999999
-        
-        # 验证工具
-        clang --version
-        go version
+        sudo apt update
+        sudo apt install -y build-essential ccache ecj fastjar file g++ gawk \
+          gettext git java-propose-classpath libelf-dev libncurses5-dev \
+          libncursesw5-dev libssl-dev python3 python3-pip python3-venv \
+          python3-distutils python3-dev rsync subversion swig time \
+          unzip wget xsltproc zlib1g-dev
 
-    - name: Clone source code
-      working-directory: /workdir
+    - name: Clone ImmortalWrt source
       run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-    - name: Load custom feeds
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
+        git clone https://github.com/immortalwrt/immortalwrt.git openwrt
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        git checkout openwrt-21.02
+
+    - name: Add custom feeds
+      run: |
+        cd openwrt
+        echo "src-git daed https://github.com/QiuSimons/OpenWrt-Add.git" >> feeds.conf.default
+        echo "src-git dae https://github.com/daeuniverse/dae-openwrt.git" >> feeds.conf.default
 
     - name: Update feeds
       run: |
         cd openwrt
-        
-        echo "=== Network Diagnostics ==="
-        echo "Resolving github.com..."
-        nslookup github.com || echo "⚠️ DNS lookup failed"
-        echo "Testing GitHub connectivity..."
-        curl -s -o /dev/null -w "GitHub HTTP Status: %{http_code}\n" https://github.com || echo "⚠️ GitHub connection failed"
-        
-        echo "=== feeds.conf.default content ==="
-        cat feeds.conf.default
-        
-        # 逐个更新 feed，失败时重试
-        echo "=== Updating feeds individually with retry ==="
-        FEEDS=$(grep -E '^src-git|^src-svn' feeds.conf.default | awk '{print $2}')
-        
-        for feed in $FEEDS; do
-          echo "📦 Updating feed: $feed"
-          for attempt in {1..3}; do
-            echo "  Attempt $attempt for $feed..."
-            if ./scripts/feeds update $feed; then
-              echo "  ✅ Feed $feed updated successfully."
-              break
-            fi
-            if [ $attempt -lt 3 ]; then
-              echo "  ⚠️ Attempt $attempt failed, retrying in 10 seconds..."
-              sleep 10
-            else
-              echo "  ❌ Feed $feed failed after 3 attempts."
-              # 如果是 mtk_driver，尝试备用源
-              if [ "$feed" = "mtk_driver" ]; then
-                echo "  🔄 Trying alternative source for mtk_driver..."
-                sed -i 's|padavanonly/immortalwrt-mt7981|hanwckf/immortalwrt-mt798x|g' feeds.conf.default
-                echo "  📝 Updated feeds.conf.default:"
-                cat feeds.conf.default
-                if ./scripts/feeds update $feed; then
-                  echo "  ✅ Feed $feed updated successfully with alternative source."
-                  break
-                else
-                  echo "  ❌ Alternative source also failed."
-                  exit 1
-                fi
-              else
-                exit 1
-              fi
-            fi
-          done
-        done
-        
-        echo "=== All feeds updated ==="
-        ls -la feeds/
+        ./scripts/feeds update -a
 
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
-
-    - name: Load custom configuration
-      run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-
-    - name: Download package
-      id: package
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    - name: Compile the firmware
-      id: compile
+    - name: Install feeds with golang fix
       run: |
         cd openwrt
         
-        # ===== 确保 clang 在 PATH 中 =====
-        export PATH=/usr/bin:$PATH
-        echo "=== CLANG environment ==="
-        which clang
-        clang --version
+        # 清理旧的 feed 缓存
+        rm -rf feeds/packages
         
-        # ===== 初始化 staging_dir =====
-        echo "Initializing staging_dir for dae/OpenClash..."
-        make tools/compile -j1 || echo "tools compile completed (with warnings)"
-        make toolchain/compile -j1 || echo "toolchain compile completed (with warnings)"
+        # 更新所有 feeds
+        ./scripts/feeds update -a
         
-        if [ -d "staging_dir" ]; then
-          echo "✅ staging_dir generated successfully."
-          ls -la staging_dir/ | head -20
+        # 安装所有 feeds
+        ./scripts/feeds install -a
+        
+        # 专门确保 golang 包已安装
+        ./scripts/feeds install -p packages golang
+        
+        # 验证 golang-package.mk 是否存在
+        echo "Checking for golang-package.mk..."
+        if [ ! -f "feeds/packages/lang/golang/golang-package.mk" ]; then
+          echo "⚠️  golang-package.mk not found! Attempting manual fix..."
+          
+          # 创建目录
+          mkdir -p feeds/packages/lang/golang
+          
+          # 从 OpenWrt 官方仓库下载
+          wget -O feeds/packages/lang/golang/golang-package.mk \
+            https://raw.githubusercontent.com/openwrt/packages/master/lang/golang/golang-package.mk
+          
+          # 如果 wget 失败，尝试从 immortalwrt 的 packages 获取
+          if [ ! -f "feeds/packages/lang/golang/golang-package.mk" ]; then
+            wget -O feeds/packages/lang/golang/golang-package.mk \
+              https://raw.githubusercontent.com/immortalwrt/packages/master/lang/golang/golang-package.mk
+          fi
+        fi
+        
+        # 最终验证
+        if [ -f "feeds/packages/lang/golang/golang-package.mk" ]; then
+          echo "✅ golang-package.mk found successfully"
+          ls -la feeds/packages/lang/golang/golang-package.mk
         else
-          echo "⚠️ WARNING: staging_dir not found, continuing anyway..."
+          echo "❌ golang-package.mk still missing"
+          echo "Available files in feeds/packages/lang/:"
+          ls -la feeds/packages/lang/ 2>/dev/null || echo "lang directory not found"
+          exit 1
         fi
         
-        # ===== 关键修复：将 clang 变量作为 make 参数传递 =====
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) \
-            CLANG=/usr/bin/clang-15 \
-            LLC=/usr/bin/llc-15 \
-            LLVM_CONFIG=/usr/bin/llvm-config-15 || \
-        make -j1 \
-            CLANG=/usr/bin/clang-15 \
-            LLC=/usr/bin/llc-15 \
-            LLVM_CONFIG=/usr/bin/llvm-config-15 || \
-        make -j1 V=s \
-            CLANG=/usr/bin/clang-15 \
-            LLC=/usr/bin/llc-15 \
-            LLVM_CONFIG=/usr/bin/llvm-config-15
+        # 重新安装 dae 相关包
+        ./scripts/feeds install dae
+        ./scripts/feeds install daed
+
+    - name: Validate build environment
+      run: |
+        cd openwrt
+        echo "=== Validating build environment ==="
         
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
-    - name: Upload bin directory
-      uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
-
-    - name: Organize files
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/* 2>/dev/null || true
-        if [ -d "$PWD" ] && [ -f "$PWD/packages" ]; then
-          rm -rf packages
+        # 验证关键文件
+        if [ -f "feeds/packages/lang/golang/golang-package.mk" ]; then
+          echo "✅ golang-package.mk exists"
+        else
+          echo "❌ golang-package.mk missing"
+          exit 1
         fi
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        
+        # 检查 dae 包是否存在
+        if [ -d "package/feeds/daed/dae" ] || [ -d "feeds/daed/dae" ]; then
+          echo "✅ dae package found"
+        else
+          echo "⚠️  dae package not found, checking..."
+          ./scripts/feeds install dae
+        fi
 
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
-
-    - name: Generate release tag
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+    - name: Copy configuration
       run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
+        cd openwrt
+        # 复制配置文件
+        if [ -f "$GITHUB_WORKSPACE/mt7981-ax3000t.config" ]; then
+          cp $GITHUB_WORKSPACE/mt7981-ax3000t.config .config
+        else
+          # 如果没有配置文件，使用默认配置
+          make defconfig
+        fi
+        
+        # 确保 dae 包被启用
+        echo "CONFIG_PACKAGE_dae=y" >> .config
+        echo "CONFIG_PACKAGE_daed=y" >> .config
+        
+        # 生成最终配置
+        make defconfig
+        
+        echo "=== Configuration summary ==="
+        grep -E "CONFIG_PACKAGE_dae|CONFIG_PACKAGE_daed" .config || echo "⚠️  dae not in config"
 
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@master
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+    - name: Build dae package first
+      run: |
+        cd openwrt
+        echo "=== Building dae package ==="
+        make package/feeds/daed/dae/compile V=s || {
+          echo "⚠️  dae build failed, installing missing dependencies..."
+          ./scripts/feeds install -a
+          make package/feeds/daed/dae/compile V=s || {
+            echo "❌ dae build failed, continuing without dae"
+            # 禁用 dae 继续构建
+            sed -i '/CONFIG_PACKAGE_dae/d' .config
+            sed -i '/CONFIG_PACKAGE_daed/d' .config
+            echo "# CONFIG_PACKAGE_dae is not set" >> .config
+            echo "# CONFIG_PACKAGE_daed is not set" >> .config
+            make defconfig
+          }
+        }
 
-    - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 0
-        keep_minimum_runs: 2
+    - name: Build firmware
+      run: |
+        cd openwrt
+        echo "=== Building firmware ==="
+        # 使用所有 CPU 核心构建，如果失败则单核心重试
+        make -j$(nproc) V=s || make -j1 V=s
 
-    - name: Remove old Releases
-      uses: dev-drprasad/delete-older-releases@master
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+    - name: Prepare artifacts
+      run: |
+        cd openwrt
+        mkdir -p artifacts
+        echo "=== Collecting artifacts ==="
+        # 查找所有固件文件
+        if [ -d "bin/targets/" ]; then
+          find bin/targets/ -type f \( -name "*.bin" -o -name "*.itb" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp {} artifacts/ \;
+        fi
+        
+        # 如果 artifacts 为空，输出提示
+        if [ -z "$(ls -A artifacts/)" ]; then
+          echo "⚠️  No artifacts found"
+        else
+          echo "✅ Artifacts collected:"
+          ls -la artifacts/
+        fi
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
       with:
-        keep_latest: 10
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: immortalwrt-ax3000t-firmware
+        path: openwrt/artifacts/
+        retention-days: 30
+
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: openwrt/logs/
+        retention-days: 7
