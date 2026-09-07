@@ -19,15 +19,13 @@ fi
 > feeds.conf.default
 
 # ========== 3. 添加 MTK 闭源驱动 (MT7981) 到 feeds ==========
-# 修正仓库地址：padavanolly -> padavanonly
 echo "src-git mtk_driver https://github.com/padavanonly/immortalwrt-mt7981" >> feeds.conf.default
-
-# 备用源：如果 padavanonly 仓库不可用，使用 hanwckf 的仓库
+# 备用源（如果 padavanonly 仓库不可用，取消下面注释）：
 # echo "src-git mtk_driver https://github.com/hanwckf/immortalwrt-mt798x" >> feeds.conf.default
 
 # ========== 4. 添加 daed 源码到 feeds ==========
 echo "src-git daed https://github.com/kenzok8/openwrt-daede.git" >> feeds.conf.default
-# 备用源：
+# 备用源（如果上面失效，取消下面注释）：
 # echo "src-git daed https://github.com/sbwml/openwrt-dae.git" >> feeds.conf.default
 
 # ========== 5. 显示 feeds 配置 ==========
